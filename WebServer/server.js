@@ -42,7 +42,7 @@ mqttClient.on("message", (topic, message) => {
 
   let data;
   try {
-    data = JSON.parse(message.toString());
+    data = JSON.parse(message.toString().trim());
   } catch (e) {
     console.warn(`Non-JSON message from ${deviceId}:`, message.toString());
     return;
