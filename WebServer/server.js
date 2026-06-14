@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const mqtt = require("mqtt");
+const JSON5 = require('json5');
 
 // ─── App setup ───────────────────────────────────────────────────────────────
 
@@ -42,7 +43,7 @@ mqttClient.on("message", (topic, message) => {
 
   let data;
   try {
-    data = JSON.parse(message.toString().trim());
+    data = JSON5.parse(message.toString().trim());
   } catch (e) {
     console.warn(`Non-JSON message from ${deviceId}:`, message.toString());
     return;
