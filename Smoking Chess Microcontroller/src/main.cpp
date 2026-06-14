@@ -1,23 +1,20 @@
 #include <Arduino.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include "credentials.h"
+
+const int   MQTT_PORT     = 1883;
 
 const int DATA_PIN  = 14;
 const int CLOCK_PIN = 25;
 
-void setup() {
-  Serial.begin(115200);
-  pinMode(DATA_PIN, INPUT);
-  pinMode(CLOCK_PIN, OUTPUT);
-  digitalWrite(CLOCK_PIN, LOW);
-  Serial.println("Pressure sensor starting...");
-}
+String deviceId;
+WiFiClient wifiClient;
+PubSubClient mqtt(wifiClient);
 
 long readHX710B() {
-  // Wait until sensor is ready (DATA pin goes LOW)
   while (digitalRead(DATA_PIN) == HIGH);
-
   long value = 0;
-
-  // Read 24 bits
   for (int i = 0; i < 24; i++) {
     digitalWrite(CLOCK_PIN, HIGH);
     delayMicroseconds(1);
@@ -25,24 +22,61 @@ long readHX710B() {
     digitalWrite(CLOCK_PIN, LOW);
     delayMicroseconds(1);
   }
-
-  // Send 1 extra pulse to set mode (10Hz, differential input)
   digitalWrite(CLOCK_PIN, HIGH);
   delayMicroseconds(1);
   digitalWrite(CLOCK_PIN, LOW);
   delayMicroseconds(1);
-
-  // Convert from 24-bit two's complement
-  if (value & 0x800000) {
-    value |= ~0xFFFFFF;
-  }
-
+  if (value & 0x800000) value |= ~0xFFFFFF;
   return value;
 }
 
+void connectWifi() {
+  Serial.print("Connecting to WiFi");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  deviceId = WiFi.macAddress();
+  deviceId.replace(":", "");
+  Serial.println("\nWiFi connected: " + WiFi.localIP().toString());
+  Serial.println("Device ID: " + deviceId);
+}
+
+void connectMQTT() {
+  while (!mqtt.connected()) {
+    Serial.print("Connecting to MQTT...");
+    if (mqtt.connect(deviceId.c_str())) {
+      Serial.println("connected");
+    } else {
+      Serial.println("failed, retrying in 2s");
+      delay(2000);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(DATA_PIN, INPUT);
+  pinMode(CLOCK_PIN, OUTPUT);
+  digitalWrite(CLOCK_PIN, LOW);
+  Serial.println("Pressure sensor starting...");
+
+  connectWifi();
+  mqtt.setServer(MQTT_SERVER, MQTT_PORT);
+}
+
 void loop() {
+  if (!mqtt.connected()) connectMQTT();
+  mqtt.loop();
+
   long raw = readHX710B();
   Serial.print("Raw pressure: ");
   Serial.println(raw);
+
+  String topic = "sensors/" + deviceId;
+  String payload = "{pressure: " + String(raw) + "}";
+  mqtt.publish(topic.c_str(), payload.c_str());
+
   delay(100);
 }
