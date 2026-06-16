@@ -57,6 +57,7 @@ void connectMQTT() {
 
 void setup() {
   Serial.begin(115200);
+
   pinMode(DATA_PIN, INPUT);
   pinMode(CLOCK_PIN, OUTPUT);
   digitalWrite(CLOCK_PIN, LOW);
@@ -76,7 +77,12 @@ void loop() {
 
   String topic = "sensors/" + deviceId;
   String payload = "{pressure: " + String(raw) + "}";
-  mqtt.publish(topic.c_str(), payload.c_str());
+
+  Serial.println("Publishing to: " + topic);
+  Serial.println("Payload: " + payload);
+
+  bool success = mqtt.publish(topic.c_str(), payload.c_str());
+  Serial.println(success ? "Pub OK" : "Pub fail");
 
   delay(100);
 }
