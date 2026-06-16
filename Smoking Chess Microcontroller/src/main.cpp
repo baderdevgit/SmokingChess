@@ -44,12 +44,16 @@ void connectWifi() {
 }
 
 void connectMQTT() {
+  mqtt.setServer(MQTT_SERVER, MQTT_PORT);
   while (!mqtt.connected()) {
-    Serial.print("Connecting to MQTT...");
+    Serial.print("Connecting to MQTT at ");
+    Serial.print(MQTT_SERVER);
+    Serial.println("...");
     if (mqtt.connect(deviceId.c_str())) {
       Serial.println("connected");
     } else {
-      Serial.println("failed, retrying in 2s");
+      Serial.print("failed, rc=");
+      Serial.println(mqtt.state());
       delay(2000);
     }
   }
