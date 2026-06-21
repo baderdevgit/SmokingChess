@@ -3,130 +3,131 @@
 <head>
   <meta charset="UTF-8">
   <title>Pressure Monitor</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 1.5rem; }
-    h1 { font-size: 16px; font-weight: 500; color: #888; margin-bottom: 1rem; letter-spacing: .05em; text-transform: uppercase; }
-    .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 1rem; }
-    .card { background: #1a1a1a; border-radius: 8px; padding: 0.75rem 1rem; min-width: 130px; }
-    .card-label { font-size: 12px; color: #666; margin-bottom: 4px; }
-    .card-value { font-size: 20px; font-weight: 500; font-family: monospace; color: #e0e0e0; }
-    .chart-wrap { position: relative; width: 100%; height: 300px; background: #1a1a1a; border-radius: 8px; padding: 1rem; }
-    .controls { display: flex; gap: 12px; margin-top: 0.75rem; align-items: center; flex-wrap: wrap; }
-    button { background: #1a1a1a; border: 0.5px solid #333; color: #ccc; border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
-    button:hover { background: #222; }
-    label { font-size: 13px; color: #666; display: flex; align-items: center; gap: 8px; }
-    input[type=range] { width: 100px; accent-color: #1D9E75; }
-    .status { font-size: 12px; color: #555; margin-left: auto; }
-    .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #555; margin-right: 5px; }
-    .dot.live { background: #1D9E75; animation: pulse 1.5s infinite; }
-    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
+    html, body { height: 100%; }
+    body { font-family: 'Times New Roman', Times, serif; background: #fff; color: #111; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1.5rem; }
+    .grid { display: flex; justify-content: center; gap: 2rem; width: 100%; }
+    .sensor { display: flex; flex-direction: column; gap: 0.5rem; width: 400px; }
+    .sensor-name { font-size: 40px; font-weight: 400; color: #000000; }
+    .sensor-value { font-size: 20px; font-weight: 400; color: #111; }
+    .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #000000; margin-right: 6px; vertical-align: middle; }
+    .dot.live { animation: pulse 1.5s infinite; }
+    .chart-wrap { position: relative; width: 100%; height: 260px; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
   </style>
 </head>
 <body>
-  <h1>Pressure monitor</h1>
-
-  <div class="cards">
-    <div class="card"><div class="card-label">current</div><div class="card-value" id="val-current">—</div></div>
-    <div class="card"><div class="card-label">min</div><div class="card-value" id="val-min">—</div></div>
-    <div class="card"><div class="card-label">max</div><div class="card-value" id="val-max">—</div></div>
-    <div class="card"><div class="card-label">baseline</div><div class="card-value" id="val-baseline">—</div></div>
-  </div>
-
-  <div class="chart-wrap">
-    <canvas id="chart" role="img" aria-label="Scrolling oscilloscope waveform of raw pressure sensor readings">Live pressure waveform.</canvas>
-  </div>
-
-  <div class="controls">
-    <button id="btn-pause" onclick="togglePause()"><i class="ti ti-player-pause"></i> pause</button>
-    <button onclick="resetBaseline()"><i class="ti ti-refresh"></i> reset</button>
-    <label>
-      window
-      <input type="range" id="win-slider" min="20" max="200" value="100" step="10"
-        oninput="document.getElementById('win-out').textContent=this.value; windowSize=+this.value;">
-      <span id="win-out">100</span>
-    </label>
-    <div class="status"><span class="dot" id="dot"></span><span id="status-text">waiting for data...</span></div>
-  </div>
+  <div class="grid" id="grid"></div>
 
   <script>
+    const BASELINE     =  2135000;
+    const MAX_NEGATIVE = BASELINE - (-8300000);
+    const WINDOW = 10;
     const BUFFER = 500;
-    let windowSize = 100;
-    let paused = false;
-    let baseline = null;
-    let allData = [];
-    let minVal = Infinity;
-    let maxVal = -Infinity;
-    let lastSeen = null;
+    const COLORS = ['#E8821A', '#1D9E75', '#7F77DD', '#E05C5C'];
+    const PLAYER_NAMES = ['player 1', 'player 2', 'player 3', 'player 4'];
 
-    const ctx = document.getElementById('chart').getContext('2d');
-    const chart = new Chart(ctx, {
-      type: 'line',
-      data: { labels: [], datasets: [{ data: [], borderColor: '#1D9E75', borderWidth: 1.5, pointRadius: 0, tension: 0, fill: false }] },
-      options: {
-        responsive: true, maintainAspectRatio: false, animation: false,
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.y.toLocaleString() } } },
-        scales: {
-          x: { ticks: { color: 'rgba(255,255,255,0.35)', maxTicksLimit: 8, font: { family: 'monospace', size: 11 } }, grid: { color: 'rgba(255,255,255,0.07)' }, border: { color: 'rgba(255,255,255,0.07)' } },
-          y: { ticks: { color: 'rgba(255,255,255,0.35)', font: { family: 'monospace', size: 11 }, callback: v => Math.abs(v)>=1e6?(v/1e6).toFixed(1)+'M':Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':v }, grid: { color: 'rgba(255,255,255,0.07)' }, border: { color: 'rgba(255,255,255,0.07)' } }
+    const devices = {};
+    let startTime = null;
+
+    function normalize(raw) {
+      const delta = BASELINE - raw;
+      return (delta / MAX_NEGATIVE) * 100;
+    }
+
+    function createDevice(deviceId) {
+      const index = Object.keys(devices).length;
+      const color = COLORS[index % COLORS.length];
+      const playerName = PLAYER_NAMES[index % PLAYER_NAMES.length];
+
+      const col = document.createElement('div');
+      col.className = 'sensor';
+      col.innerHTML = `
+        <!--<div class="sensor-name">${playerName}</div>-->
+        <div class="sensor-value" id="val-${deviceId}">smoking pressure: </div>
+        <div class="chart-wrap">
+          <canvas id="chart-${deviceId}" role="img" aria-label="suction waveform for ${playerName}"></canvas>
+        </div>
+      `;
+      document.getElementById('grid').appendChild(col);
+
+      const ctx = document.getElementById('chart-' + deviceId).getContext('2d');
+      const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{ data: [], borderColor: color, borderWidth: 1.5, pointRadius: 0, tension: 0, fill: false }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.parsed.y.toFixed(1) + '%' } } },
+          scales: {
+            x: {
+              display: true,
+              ticks: { display: false },
+              grid: { color: 'rgba(0,0,0,0.15)', drawTicks: false },
+              border: { color: '#111' }
+            },
+            y: {
+              min: 0, max: 100,
+              ticks: {
+                color: '#111',
+                font: { family: 'Times New Roman', size: 10 },
+                stepSize: 25,
+                callback: v => v + '%'
+              },
+              grid: { color: 'rgba(0,0,0,0.15)' },
+              border: { color: '#111' }
+            }
+          }
+        }
+      });
+
+      devices[deviceId] = { chart, color, allData: [], lastSeen: null };
+      return devices[deviceId];
+    }
+
+    function pushReading(deviceId, raw) {
+      if (!devices[deviceId]) createDevice(deviceId);
+      const dev = devices[deviceId];
+
+      if (startTime === null) startTime = Date.now();
+
+      const norm = normalize(raw);
+      dev.allData.push(norm);
+      if (dev.allData.length > BUFFER) dev.allData.shift();
+
+      const slice = dev.allData.slice(-WINDOW);
+      dev.chart.data.labels = Array.from({ length: WINDOW }, (_, i) => i);
+      dev.chart.data.datasets[0].data = slice;
+      dev.chart.update('none');
+
+      document.getElementById('val-' + deviceId).textContent = 'smoking pressure: ' + norm.toFixed(1) + '%';
+      dev.lastSeen = Date.now();
+      document.getElementById('dot-' + deviceId).classList.add('live');
+    }
+
+    setInterval(() => {
+      for (const id in devices) {
+        const dev = devices[id];
+        if (dev.lastSeen && Date.now() - dev.lastSeen > 5000) {
+          document.getElementById('dot-' + id).classList.remove('live');
         }
       }
-    });
-
-    function pushReading(value) {
-      if (paused) return;
-      if (baseline === null) baseline = value;
-      allData.push(value);
-      if (allData.length > BUFFER) allData.shift();
-      if (value < minVal) minVal = value;
-      if (value > maxVal) maxVal = value;
-      const slice = allData.slice(-windowSize);
-      chart.data.labels = slice.map((_, i) => allData.length - slice.length + i);
-      chart.data.datasets[0].data = slice;
-      const pad = Math.max(Math.abs(maxVal - baseline), Math.abs(minVal - baseline)) * 0.15 || 100000;
-      chart.options.scales.y.min = minVal - pad;
-      chart.options.scales.y.max = maxVal + pad;
-      chart.update('none');
-      document.getElementById('val-current').textContent = value.toLocaleString();
-      document.getElementById('val-min').textContent = minVal.toLocaleString();
-      document.getElementById('val-max').textContent = maxVal.toLocaleString();
-      document.getElementById('val-baseline').textContent = Math.round(baseline).toLocaleString();
-      lastSeen = Date.now();
-      document.getElementById('dot').classList.add('live');
-      document.getElementById('status-text').textContent = 'live';
-    }
-
-    function togglePause() {
-      paused = !paused;
-      document.getElementById('btn-pause').innerHTML = paused
-        ? '<i class="ti ti-player-play"></i> resume'
-        : '<i class="ti ti-player-pause"></i> pause';
-    }
-
-    function resetBaseline() {
-      baseline = null; minVal = Infinity; maxVal = -Infinity; allData = [];
-      chart.data.labels = []; chart.data.datasets[0].data = [];
-      chart.update('none');
-      ['val-current','val-min','val-max','val-baseline'].forEach(id => document.getElementById(id).textContent = '—');
-    }
+    }, 1000);
 
     const socket = io();
     socket.on('sensor-update', (state) => {
       for (const deviceId in state) {
         const reading = state[deviceId]?.pressure;
-        if (reading !== undefined) pushReading(reading);
+        if (reading !== undefined) pushReading(deviceId, reading);
       }
     });
-
-    setInterval(() => {
-      if (lastSeen && Date.now() - lastSeen > 5000) {
-        document.getElementById('dot').classList.remove('live');
-        document.getElementById('status-text').textContent = 'no signal';
-      }
-    }, 1000);
   </script>
 </body>
 </html>
