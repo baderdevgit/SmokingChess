@@ -23,8 +23,6 @@
   <div class="grid" id="grid"></div>
 
   <script>
-    const BASELINE     =  2135000;
-    const MAX_NEGATIVE = BASELINE - (-8300000);
     const WINDOW = 10;
     const BUFFER = 500;
     const COLORS = ['#E8821A', '#1D9E75', '#7F77DD', '#E05C5C'];
@@ -32,11 +30,6 @@
 
     const devices = {};
     let startTime = null;
-
-    function normalize(raw) {
-      const delta = BASELINE - raw;
-      return (delta / MAX_NEGATIVE) * 100;
-    }
 
     function createDevice(deviceId) {
       const index = Object.keys(devices).length;
@@ -47,11 +40,14 @@
       col.className = 'sensor';
       col.innerHTML = `
         <!--<div class="sensor-name">${playerName}</div>-->
-        <div class="sensor-value" id="val-${deviceId}">smoking pressure: </div>
+        
         <div class="chart-wrap">
           <canvas id="chart-${deviceId}" role="img" aria-label="suction waveform for ${playerName}"></canvas>
         </div>
+        <div class="sensor-value" id="val-${deviceId}">smoking pressure: </div>
+        <div class="sensor-value" id="duration-${deviceId}">duration: 0.0s</div>
       `;
+
       document.getElementById('grid').appendChild(col);
 
       const ctx = document.getElementById('chart-' + deviceId).getContext('2d');
@@ -92,13 +88,12 @@
       return devices[deviceId];
     }
 
-    function pushReading(deviceId, raw) {
+    function pushReading(deviceId, norm, duration) {
       if (!devices[deviceId]) createDevice(deviceId);
       const dev = devices[deviceId];
 
       if (startTime === null) startTime = Date.now();
 
-      const norm = normalize(raw);
       dev.allData.push(norm);
       if (dev.allData.length > BUFFER) dev.allData.shift();
 
@@ -107,25 +102,21 @@
       dev.chart.data.datasets[0].data = slice;
       dev.chart.update('none');
 
-      document.getElementById('val-' + deviceId).textContent = 'smoking pressure: ' + norm.toFixed(1) + '%';
+      document.getElementById('val-' + deviceId).textContent = 'smoking pressure: ' + (norm < 1 ? (0).toFixed() : norm.toFixed(1)) + '%';
       dev.lastSeen = Date.now();
-      document.getElementById('dot-' + deviceId).classList.add('live');
-    }
 
-    setInterval(() => {
-      for (const id in devices) {
-        const dev = devices[id];
-        if (dev.lastSeen && Date.now() - dev.lastSeen > 5000) {
-          document.getElementById('dot-' + id).classList.remove('live');
-        }
+      const durEl = document.getElementById('duration-' + deviceId);
+      if (durEl && duration !== undefined) {
+        durEl.textContent = 'duration: ' + duration.toFixed(1) + 's';
       }
-    }, 1000);
+    }
 
     const socket = io();
     socket.on('sensor-update', (state) => {
       for (const deviceId in state) {
-        const reading = state[deviceId]?.pressure;
-        if (reading !== undefined) pushReading(deviceId, reading);
+        const norm = state[deviceId]?.norm;
+        const duration = state[deviceId]?.duration;
+        if (norm !== undefined) pushReading(deviceId, norm, duration);
       }
     });
   </script>
