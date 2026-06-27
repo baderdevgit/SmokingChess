@@ -1,7 +1,9 @@
-const { BASELINE, MAX_NEGATIVE } = require("../config");
+const { MAX_NEGATIVE } = require("../config");
 
-function normalize(raw) {
-  const delta = BASELINE - raw;
+const CALIBRATION_SAMPLES = 10;
+
+function normalize(raw, baseline) {
+  const delta = baseline - raw;
   return (delta / MAX_NEGATIVE) * 100;
 }
 
@@ -14,10 +16,30 @@ function applyReading(existing, data) {
     lastSeen: new Date().toISOString(),
   };
 
-  const norm = data.pressure !== undefined ? normalize(data.pressure) : null;
+  // ── Per-device calibration ──────────────────────────────────────────
+  // Each sensor has its own resting baseline due to manufacturing
+  // tolerance, so average the first N readings before normalizing.
+  if (merged.baseline === undefined) {
+    merged.calibrationBuffer = [...(existing.calibrationBuffer || []), data.pressure];
+
+    if (merged.calibrationBuffer.length >= CALIBRATION_SAMPLES) {
+      const sum = merged.calibrationBuffer.reduce((a, b) => a + b, 0);
+      merged.baseline = sum / merged.calibrationBuffer.length;
+      delete merged.calibrationBuffer;
+    } else {
+      // Still calibrating — don't normalize yet
+      merged.norm = null;
+      merged.nonZeroSince = null;
+      merged.duration = 0;
+      return merged;
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────
+
+  const norm = data.pressure !== undefined ? normalize(data.pressure, merged.baseline) : null;
   const isActive = norm !== null && norm >= 1;
 
-  if(norm != null) {
+  if (norm != null) {
     merged.norm = norm;
   }
 
