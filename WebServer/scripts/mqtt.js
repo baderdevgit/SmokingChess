@@ -3,6 +3,7 @@ const JSON5 = require("json5");
 const { MQTT_BROKER } = require("./config");
 const state = require("./state");
 const { applyReading, tickDuration } = require("./lib/pressure");
+const { computeRelayCommands, computeWinner } = require("./lib/relay");
 
 function createMqttClient(io) {
   const client = mqtt.connect(MQTT_BROKER);
@@ -63,4 +64,19 @@ function startDurationTicker(io, intervalMs = 200) {
   }, intervalMs);
 }
 
-module.exports = { createMqttClient, sendCommand, startDurationTicker };
+function startRelayTicker(io, client, intervalMs = 200) {
+  setInterval(() => {
+    const allDevices = state.getState();
+    const commands = computeRelayCommands(allDevices);
+
+    for (const deviceId in commands) {
+      sendCommand(client, deviceId, { relay: commands[deviceId] });
+    }
+
+    const winner = computeWinner(allDevices);
+    io.emit("winner-update", { winner }); // separate lightweight event
+
+  }, intervalMs);
+}
+
+module.exports = { createMqttClient, sendCommand, startDurationTicker, startRelayTicker };

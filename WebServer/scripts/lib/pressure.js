@@ -43,6 +43,12 @@ function applyReading(existing, data) {
     merged.norm = norm;
   }
 
+  const NOISE_FLOOR = 1; // percent
+  const cleanedNorm = norm < NOISE_FLOOR ? 0 : norm;
+
+  // Track rolling history for relay comparison
+  merged.normHistory = [...(existing.normHistory || []), cleanedNorm].slice(-7);
+
   if (isActive) {
     merged.nonZeroSince = existing.nonZeroSince || Date.now();
     merged.duration = (Date.now() - merged.nonZeroSince) / 1000;

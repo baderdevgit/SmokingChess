@@ -3,7 +3,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 
 const { PORT } = require("./config");
-const { createMqttClient, sendCommand, startDurationTicker } = require("./mqtt");
+const { createMqttClient, sendCommand, startDurationTicker, startRelayTicker } = require("./mqtt");
 const createRoutes = require("./routes");
 const registerSocketHandlers = require("./socket");
 
@@ -16,6 +16,7 @@ app.use(express.static("public"));
 
 const mqttClient = createMqttClient(io);
 startDurationTicker(io);
+startRelayTicker(io, mqttClient);
 
 app.use(createRoutes(mqttClient, sendCommand));
 registerSocketHandlers(io, mqttClient, sendCommand);
