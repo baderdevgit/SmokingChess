@@ -25,7 +25,7 @@
   <script>
     const WINDOW = 10;
     const BUFFER = 500;
-    const COLORS = ['#E8821A', '#1D9E75', '#7F77DD', '#E05C5C'];
+    const COLORS = ['#E0413A', '#3A7FE0']; // player 1 red, player 2 blue
     const PLAYER_NAMES = ['player 1', 'player 2', 'player 3', 'player 4'];
 
     const devices = {};
@@ -55,7 +55,15 @@
         type: 'line',
         data: {
           labels: [],
-          datasets: [{ data: [], borderColor: color, borderWidth: 1.5, pointRadius: 0, tension: 0, fill: false }]
+          datasets: [{
+            data: [],
+            borderColor: color,
+            backgroundColor: color + '33', // semi-transparent fill, same hue as the line
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0,
+            fill: true
+          }]
         },
         options: {
           responsive: true,
